@@ -1,0 +1,38 @@
+{
+  "episode_id": 4,
+  "scene": "B1",
+  "fault": "None",
+  "success": false,
+  "total_reward": -100.0793190009609,
+  "total_steps": 250,
+  "collision": false,
+  "collision_t": null,
+  "confusion_matrix": {
+    "tp": 0,
+    "fp": 0,
+    "tn": 250,
+    "fn": 0
+  },
+  "metrics": {
+    "precision": 0.0,
+    "recall": 0.0,
+    "false_positive_rate": 0.0,
+    "f1_score": 0.0
+  },
+  "timing": {
+    "t_fault_inject": null,
+    "t_first_alert": null,
+    "t_first_danger": null,
+    "warning_lead_time": null
+  },
+  "intervention": {
+    "total_alerts": 0,
+    "intervention_count": 0,
+    "slowdown_steps": 0,
+    "stop_steps": 0
+  },
+  "performance": {
+    "avg_inference_latency_ms": 0.555720329284668,
+    "max_inference_latency_ms": 1.0764598846435547
+  }
+}

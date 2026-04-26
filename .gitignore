@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Data files (too large for git)
+outputs/csv/*.csv
+outputs/raw_data/*.json
+outputs/region2_gru/*.pth
+outputs/region2_gru/*.npy
+outputs/region3_complete/*.pkl
+outputs/region3_complete/*.json
+outputs/rta_online_tests/*.csv
+outputs/server_run_*/**
+outputs/real_act_run_*/**
+ckpts/
+models/
+data/
+
+# Figures (can be regenerated)
+outputs/figures/**/*.png
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,37 @@
+# Fetch Mobile Manipulator Parameters
+# References: Fetch Robotics Datasheet, ISO 10218-1:2011
+
+# 底盘参数
+base:
+  mass: 25.0              # kg
+  width: 0.60             # m
+  length: 0.60            # m
+  v_max: 1.0              # m/s (ISO 10218-1)
+  ω_max: 1.5              # rad/s
+  a_max: 1.0              # m/s²
+  α_max: 2.0              # rad/s²
+
+# 机械臂参数
+arm:
+  dof: 7
+  mass: 12.5              # kg
+  payload_max: 2.5        # kg
+  τ_limits: [50, 50, 30, 30, 20, 20, 10]  # Nm per joint
+
+# Region 1 硬约束 (安全边界)
+constraints:
+  d_min: 0.15             # m (防撞距离，ISO 10218-1)
+  z_ee_min: 0.05          # m (末端防触地)
+  h_obstacle: 1.8         # m (行人高度)
+
+# 视觉参数
+vision:
+  rgb_shape: [3, 224, 224]
+  depth_shape: [1, 224, 224]
+  frame_rate: 30          # Hz
+  feature_dim: 512        # ResNet-34 特征维度
+
+# 仿真参数
+simulation:
+  dt: 0.02                # s (50Hz 控制频率)
+  horizon: 1.0            # s (可达集预测时域)

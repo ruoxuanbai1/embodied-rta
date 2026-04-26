@@ -1,0 +1,69 @@
+{
+  "name": "Region 3 Complete Detector",
+  "architecture": "independent_modules",
+  "description": "三模块独立预警，任一触发即降级",
+  
+  "modules": {
+    "gradient_contribution": {
+      "description": "决策因子贡献度 - 检测逻辑合理性",
+      "method": "Taylor expansion: φ = x × ∂a/∂x",
+      "K": 8,
+      "num_episodes": 50,
+      "F_legal": "每模态 14 动作×3 关键特征",
+      "trigger": {
+        "condition": "S_logic < threshold",
+        "threshold": 0.4,
+        "description": "逻辑合理性低于 40% → 异常"
+      }
+    },
+    
+    "activation_link": {
+      "description": "激活链路 - 检测神经元激活模式异常",
+      "method": "Hamming distance on binary activations",
+      "K": 8,
+      "num_episodes": 50,
+      "layers": 4,
+      "dim_per_layer": 512,
+      "thresholds": {
+        "layer0_ffn": {"min": 0.0703, "max": 0.0723, "method": "95th percentile"},
+        "layer1_ffn": {"min": 0.1016, "max": 0.1055, "method": "95th percentile"},
+        "layer2_ffn": {"min": 0.1406, "max": 0.1465, "method": "95th percentile"},
+        "layer3_ffn": {"min": 0.2188, "max": 0.2227, "method": "95th percentile"}
+      },
+      "trigger": {
+        "condition": "D_ham > threshold (per layer & modality)",
+        "description": "汉明距离超过阈值 → 异常"
+      }
+    },
+    
+    "ood_detection": {
+      "description": "OOD 检测 - 检测状态分布外",
+      "method": "Mahalanobis distance",
+      "state_dim": 28,
+      "threshold": 15.6195,
+      "method_threshold": "99th percentile",
+      "trigger": {
+        "condition": "D_ood > 15.62",
+        "description": "马氏距离超过 99% 分位数 → 异常"
+      }
+    }
+  },
+  
+  "intervention": {
+    "logic": "OR (任一模块触发即干预)",
+    "action": {
+      "velocity_scale": 0.4,
+      "omega_scale": 0.4,
+      "torque_scale": 0.6
+    },
+    "description": "任一模块预警 → 动作打折扣"
+  },
+  
+  "files": {
+    "kmeans_gradient_ood.pkl": "KMeans 模型 (梯度 + OOD)",
+    "kmeans_activation.pkl": "KMeans 模型 (激活)",
+    "F_legal_profiles.json": "关键决策因子",
+    "activation_masks.json": "激活掩码 + 阈值",
+    "ood_stats.json": "OOD 统计量 (μ, Σ_inv, threshold)"
+  }
+}

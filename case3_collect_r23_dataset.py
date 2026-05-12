@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from itertools import zip_longest
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +72,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gradient-every", type=int, default=1)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--schedule", choices=["sequential", "round_robin"], default="sequential")
+    parser.add_argument("--group-by", choices=["scene", "axis"], default="scene")
     parser.add_argument("--append", action="store_true")
     parser.add_argument("--skip-existing", action="store_true")
     return parser.parse_args()
@@ -285,6 +288,78 @@ def save_rollout(
     )
 
 
+def scene_output_dir(output_dir: Path, scene_spec: Any, *, group_by: str) -> Path:
+    if group_by == "axis":
+        return output_dir / scene_spec.stress_axis / scene_spec.name
+    return output_dir / scene_spec.name
+
+
+def build_fault_profile(
+    *,
+    fault_name: str,
+    fault_timing: str | None,
+    intensity_band: str | None,
+    seed: int,
+) -> dict[str, Any] | None:
+    if fault_name == "normal":
+        return None
+    assert fault_timing is not None
+    assert intensity_band is not None
+    fault_profile = resolved_fault_profile_with_band_dict(
+        fault_timing,
+        seed=seed,
+        fault_name=fault_name,
+        intensity_band=intensity_band,
+    )
+    fault_profile["fault_timing"] = fault_timing
+    fault_profile["intensity_band"] = intensity_band
+    return fault_profile
+
+
+def build_scene_jobs(args: argparse.Namespace, scene: str) -> list[dict[str, Any]]:
+    jobs: list[dict[str, Any]] = []
+    for seed in args.seeds:
+        jobs.append(
+            {
+                "scene": scene,
+                "seed": seed,
+                "fault_name": "normal",
+                "fault_timing": None,
+                "intensity_band": None,
+            }
+        )
+        for fault_name in args.faults:
+            if fault_name == "normal":
+                continue
+            for fault_timing in args.fault_timings:
+                for intensity_band in args.intensity_bands:
+                    jobs.append(
+                        {
+                            "scene": scene,
+                            "seed": seed,
+                            "fault_name": fault_name,
+                            "fault_timing": fault_timing,
+                            "intensity_band": intensity_band,
+                        }
+                    )
+    return jobs
+
+
+def rollout_jobs(args: argparse.Namespace) -> list[dict[str, Any]]:
+    per_scene = [build_scene_jobs(args, scene) for scene in args.scenes]
+    if args.schedule == "round_robin":
+        interleaved: list[dict[str, Any]] = []
+        for row in zip_longest(*per_scene, fillvalue=None):
+            for item in row:
+                if item is not None:
+                    interleaved.append(item)
+        return interleaved
+    flattened: list[dict[str, Any]] = []
+    for jobs in per_scene:
+        flattened.extend(jobs)
+    return flattened
+
+
 def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
@@ -306,98 +381,58 @@ def main() -> None:
     manifest_path = output_dir / "manifest.json"
     manifest: list[dict[str, Any]] = load_manifest(manifest_path) if args.append else []
     write_manifest(manifest_path, manifest)
-    for scene in args.scenes:
-        scene_spec = get_scene_variant(scene)
-        scene_dir = output_dir / scene
-        scene_dir.mkdir(parents=True, exist_ok=True)
-        for seed in args.seeds:
-            normal_name = f"{scene}__normal__seed{seed}.npz"
-            normal_path = scene_dir / normal_name
-            if not (args.skip_existing and normal_path.exists()):
-                normal_rollout = collect_single_rollout(
-                    adapter=adapter,
-                    policy=policy,
-                    scene=scene,
-                    fault_type=None,
-                    fault_profile=None,
-                    seed=seed,
-                    max_steps=args.max_steps,
-                    device=device,
-                    gradient_every=args.gradient_every,
-                )
-                save_rollout(
-                    out_path=normal_path,
-                    rollout=normal_rollout,
-                    manifest=manifest,
-                    manifest_entry=manifest_entry_from_rollout(
-                        out_path=normal_path,
-                        scene_spec=scene_spec,
-                        fault_type="normal",
-                        seed=seed,
-                        rollout=normal_rollout,
-                        fault_profile=None,
-                    ),
-                    manifest_path=manifest_path,
-                )
-            else:
-                print(json.dumps({"skipped_existing": str(normal_path)}), flush=True)
+    for job in rollout_jobs(args):
+        scene = str(job["scene"])
+        seed = int(job["seed"])
+        fault_name = str(job["fault_name"])
+        fault_timing = job["fault_timing"]
+        intensity_band = job["intensity_band"]
 
-            for fault_name in fault_names:
-                if fault_name == "normal":
-                    continue
-                for fault_timing in args.fault_timings:
-                    for intensity_band in args.intensity_bands:
-                        fault_profile = resolved_fault_profile_with_band_dict(
-                            fault_timing,
-                            seed=seed,
-                            fault_name=fault_name,
-                            intensity_band=intensity_band,
-                        )
-                        fault_profile["fault_timing"] = fault_timing
-                        fault_profile["intensity_band"] = intensity_band
-                        rollout = collect_single_rollout(
-                            adapter=adapter,
-                            policy=policy,
-                            scene=scene,
-                            fault_type=fault_name,
-                            fault_profile=fault_profile,
-                            seed=seed,
-                            max_steps=args.max_steps,
-                            device=device,
-                            gradient_every=args.gradient_every,
-                        )
-                        out_name = (
-                            f"{scene}__{fault_name}__{fault_timing}__{intensity_band}__seed{seed}.npz"
-                        )
-                        out_path = scene_dir / out_name
-                        if args.skip_existing and out_path.exists():
-                            print(json.dumps({"skipped_existing": str(out_path)}), flush=True)
-                            continue
-                        rollout = collect_single_rollout(
-                            adapter=adapter,
-                            policy=policy,
-                            scene=scene,
-                            fault_type=fault_name,
-                            fault_profile=fault_profile,
-                            seed=seed,
-                            max_steps=args.max_steps,
-                            device=device,
-                            gradient_every=args.gradient_every,
-                        )
-                        save_rollout(
-                            out_path=out_path,
-                            rollout=rollout,
-                            manifest=manifest,
-                            manifest_entry=manifest_entry_from_rollout(
-                                out_path=out_path,
-                                scene_spec=scene_spec,
-                                fault_type=fault_name,
-                                seed=seed,
-                                rollout=rollout,
-                                fault_profile=fault_profile,
-                            ),
-                            manifest_path=manifest_path,
-                        )
+        scene_spec = get_scene_variant(scene)
+        scene_dir = scene_output_dir(output_dir, scene_spec, group_by=args.group_by)
+        scene_dir.mkdir(parents=True, exist_ok=True)
+
+        if fault_name == "normal":
+            out_name = f"{scene}__normal__seed{seed}.npz"
+        else:
+            out_name = f"{scene}__{fault_name}__{fault_timing}__{intensity_band}__seed{seed}.npz"
+        out_path = scene_dir / out_name
+
+        if args.skip_existing and out_path.exists():
+            print(json.dumps({"skipped_existing": str(out_path)}), flush=True)
+            continue
+
+        fault_profile = build_fault_profile(
+            fault_name=fault_name,
+            fault_timing=fault_timing,
+            intensity_band=intensity_band,
+            seed=seed,
+        )
+        rollout = collect_single_rollout(
+            adapter=adapter,
+            policy=policy,
+            scene=scene,
+            fault_type=None if fault_name == "normal" else fault_name,
+            fault_profile=fault_profile,
+            seed=seed,
+            max_steps=args.max_steps,
+            device=device,
+            gradient_every=args.gradient_every,
+        )
+        save_rollout(
+            out_path=out_path,
+            rollout=rollout,
+            manifest=manifest,
+            manifest_entry=manifest_entry_from_rollout(
+                out_path=out_path,
+                scene_spec=scene_spec,
+                fault_type=fault_name,
+                seed=seed,
+                rollout=rollout,
+                fault_profile=fault_profile,
+            ),
+            manifest_path=manifest_path,
+        )
 
     print(manifest_path)
 

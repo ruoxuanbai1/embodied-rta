@@ -33,6 +33,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=400)
     parser.add_argument("--gradient-every", type=int, default=20)
     parser.add_argument("--blocks", nargs="+", default=["perception", "dynamics", "mixed"])
+    parser.add_argument("--schedule", choices=["sequential", "round_robin"], default="round_robin")
+    parser.add_argument("--group-by", choices=["scene", "axis"], default="axis")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -81,6 +83,10 @@ def build_collector_cmd(args: argparse.Namespace, *, scenes: list[str], faults: 
         args.output_dir,
         "--device",
         args.device,
+        "--schedule",
+        args.schedule,
+        "--group-by",
+        args.group_by,
         "--append",
         "--skip-existing",
     ]

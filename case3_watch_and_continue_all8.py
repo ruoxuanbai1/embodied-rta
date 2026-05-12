@@ -30,6 +30,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gradient-every", type=int, default=20)
     parser.add_argument("--poll-seconds", type=int, default=120)
     parser.add_argument("--remaining-blocks", nargs="+", default=["dynamics", "mixed"])
+    parser.add_argument("--schedule", choices=["sequential", "round_robin"], default="round_robin")
+    parser.add_argument("--group-by", choices=["scene", "axis"], default="axis")
     parser.add_argument("--r2-epochs", type=int, default=4)
     parser.add_argument("--r2-threshold", type=float, default=0.5)
     parser.add_argument("--lead-window", type=int, default=25)
@@ -115,6 +117,10 @@ def build_collection_cmd(args: argparse.Namespace, *, blocks_to_run: list[str]) 
         str(args.max_steps),
         "--gradient-every",
         str(args.gradient_every),
+        "--schedule",
+        args.schedule,
+        "--group-by",
+        args.group_by,
         "--blocks",
         *blocks_to_run,
     ]

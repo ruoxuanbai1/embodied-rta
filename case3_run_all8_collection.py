@@ -54,11 +54,25 @@ def scene_blocks() -> dict[str, dict[str, list[str]]]:
             "scenes": grouped.get("mixed", []),
             "faults": ["normal", "F3_adversarial", "F6_dynamic", "F8_compound"],
         },
+        "remaining_all": {
+            "scenes": grouped.get("dynamics", []) + grouped.get("timing_shift", []) + grouped.get("mixed", []),
+            "faults": [],
+            "scene_fault_specs": (
+                [f"{scene}=normal,F4_payload,F5_friction,F6_dynamic,F8_compound" for scene in grouped.get("dynamics", []) + grouped.get("timing_shift", [])]
+                + [f"{scene}=normal,F3_adversarial,F6_dynamic,F8_compound" for scene in grouped.get("mixed", [])]
+            ),
+        },
     }
 
 
-def build_collector_cmd(args: argparse.Namespace, *, scenes: list[str], faults: list[str]) -> list[str]:
-    return [
+def build_collector_cmd(
+    args: argparse.Namespace,
+    *,
+    scenes: list[str],
+    faults: list[str],
+    scene_fault_specs: list[str] | None = None,
+) -> list[str]:
+    cmd = [
         sys.executable,
         args.collector_script,
         "--model-id",
@@ -90,6 +104,9 @@ def build_collector_cmd(args: argparse.Namespace, *, scenes: list[str], faults: 
         "--append",
         "--skip-existing",
     ]
+    if scene_fault_specs:
+        cmd.extend(["--scene-fault-specs", *scene_fault_specs])
+    return cmd
 
 
 def main() -> None:
@@ -106,7 +123,12 @@ def main() -> None:
         if not spec["scenes"]:
             print(f"[skip-empty-block] {block_name}")
             continue
-        cmd = build_collector_cmd(args, scenes=spec["scenes"], faults=spec["faults"])
+        cmd = build_collector_cmd(
+            args,
+            scenes=spec["scenes"],
+            faults=spec["faults"],
+            scene_fault_specs=spec.get("scene_fault_specs"),
+        )
         print(f"[run-block] {block_name}")
         print(" ".join(cmd))
         if args.dry_run:

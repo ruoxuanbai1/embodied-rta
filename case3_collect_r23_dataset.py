@@ -65,6 +65,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--legacy-source-root", default=DEFAULT_LEGACY_SOURCE_ROOT)
     parser.add_argument("--scenes", nargs="+", default=scene_variant_names(supported_only=True))
     parser.add_argument("--faults", nargs="+", default=["normal"])
+    parser.add_argument(
+        "--scene-fault-specs",
+        nargs="+",
+        default=None,
+        help="Optional per-scene fault mapping in the form scene=f1,f2,...; overrides --faults when provided.",
+    )
     parser.add_argument("--fault-timings", nargs="+", choices=["early", "mid", "late"], default=list(DEFAULT_SCENE_TRIAL_DESIGN.fault_timings))
     parser.add_argument("--intensity-bands", nargs="+", choices=canonical_intensity_band_names(), default=list(DEFAULT_SCENE_TRIAL_DESIGN.intensity_bands))
     parser.add_argument("--seeds", nargs="+", type=int, default=[42, 43, 44, 45, 46])
@@ -318,6 +324,7 @@ def build_fault_profile(
 
 def build_scene_jobs(args: argparse.Namespace, scene: str) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
+    fault_names = faults_for_scene(args, scene)
     for seed in args.seeds:
         jobs.append(
             {
@@ -328,7 +335,7 @@ def build_scene_jobs(args: argparse.Namespace, scene: str) -> list[dict[str, Any
                 "intensity_band": None,
             }
         )
-        for fault_name in args.faults:
+        for fault_name in fault_names:
             if fault_name == "normal":
                 continue
             for fault_timing in args.fault_timings:
@@ -360,6 +367,31 @@ def rollout_jobs(args: argparse.Namespace) -> list[dict[str, Any]]:
     return flattened
 
 
+def parse_scene_fault_specs(args: argparse.Namespace) -> dict[str, list[str]]:
+    mapping: dict[str, list[str]] = {}
+    if not args.scene_fault_specs:
+        return mapping
+    for raw_spec in args.scene_fault_specs:
+        if "=" not in raw_spec:
+            raise ValueError(f"Invalid scene fault spec: {raw_spec}")
+        scene, raw_faults = raw_spec.split("=", 1)
+        scene = scene.strip()
+        faults = [fault.strip() for fault in raw_faults.split(",") if fault.strip()]
+        if not scene:
+            raise ValueError(f"Missing scene name in scene fault spec: {raw_spec}")
+        if not faults:
+            raise ValueError(f"Missing fault names in scene fault spec: {raw_spec}")
+        mapping[scene] = faults
+    return mapping
+
+
+def faults_for_scene(args: argparse.Namespace, scene: str) -> list[str]:
+    scene_fault_map = parse_scene_fault_specs(args)
+    if scene in scene_fault_map:
+        return scene_fault_map[scene]
+    return [str(fault) for fault in args.faults]
+
+
 def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
@@ -373,8 +405,11 @@ def main() -> None:
     )
     adapter = GymAlohaTransferCubeAdapter()
 
-    fault_names = [f for f in args.faults]
-    invalid_faults = [f for f in fault_names if f != "normal" and f not in canonical_fault_names()]
+    scene_fault_map = parse_scene_fault_specs(args)
+    all_fault_names = set(str(f) for f in args.faults)
+    for fault_list in scene_fault_map.values():
+        all_fault_names.update(fault_list)
+    invalid_faults = [f for f in sorted(all_fault_names) if f != "normal" and f not in canonical_fault_names()]
     if invalid_faults:
         raise ValueError(f"Unknown fault names: {invalid_faults}")
 
